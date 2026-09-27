@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  camofox-browser:
+    image: camofox-browser:135.0.1-x86_64
+    container_name: camofox-browser
+    restart: unless-stopped
+    ports:
+      - "9377:9377"
+      - "6080:6080"
+    environment:
+      - CAMOFOX_PORT=9377
+      - NOVNC_PORT=6080
+      - ENABLE_VNC=1
+      - VNC_BIND=0.0.0.0
+      - VNC_PASSWORD=${VNC_PASSWORD:-}
+      # Per-session VNC grid — see the comment in .env for what these do.
+      - VNC_GRID_COLS=${VNC_GRID_COLS:-4}
+      - VNC_GRID_ROWS=${VNC_GRID_ROWS:-4}
+      - VNC_GRID_CELL_WIDTH=${VNC_GRID_CELL_WIDTH:-1920}
+      - VNC_GRID_CELL_HEIGHT=${VNC_GRID_CELL_HEIGHT:-1080}
+      - CAMOFOX_API_KEY=${CAMOFOX_API_KEY:-}
+      - CAMOFOX_ACCESS_KEY=${CAMOFOX_ACCESS_KEY:-}
+      - CAMOFOX_CRASH_REPORT_ENABLED=${CAMOFOX_CRASH_REPORT_ENABLED:-true}
+      - CAMOFOX_CRASH_REPORT_URL=${CAMOFOX_CRASH_REPORT_URL:-https://camofox-telemetry.askjo.workers.dev/report}
+      - BROWSER_IDLE_TIMEOUT_MS=300000
+      - MAX_SESSIONS=50
+      - MAX_TABS_PER_SESSION=10
+      - SESSION_TIMEOUT_MS=1800000
+    volumes:
+      - ./data/.camofox/cookies:/home/node/.camofox/cookies
+      - ./data/.camofox/profiles:/home/node/.camofox/profiles
+      - ./data/.camofox/traces:/home/node/.camofox/traces
+      - ./camofox.config.json:/app/camofox.config.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9377/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+

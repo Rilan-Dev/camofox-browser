@@ -5,3 +5,5 @@ python3-websockify
 # Utilities for display detection
 net-tools
 procps
+# Per-session window lookup (session-vnc-bridge.js clips x11vnc to one session's window)
+xdotool

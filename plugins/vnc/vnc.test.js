@@ -37,6 +37,7 @@ jest.unstable_mockModule('../../lib/tmp-cleanup.js', () => ({
 // Mock auth middleware
 jest.unstable_mockModule('../../lib/auth.js', () => ({
   requireAuth: () => (_req, _res, next) => next(),
+  timingSafeCompare: (a, b) => a === b,
 }));
 
 // Minimal VirtualDisplay mock (real class has side-effects that break in test)
@@ -69,6 +70,7 @@ describe('vnc plugin', () => {
     routes = {};
     mockApp = {
       get: jest.fn((path, ...handlers) => { routes[`GET ${path}`] = handlers; }),
+      post: jest.fn((path, ...handlers) => { routes[`POST ${path}`] = handlers; }),
     };
     ctx = {
       events,

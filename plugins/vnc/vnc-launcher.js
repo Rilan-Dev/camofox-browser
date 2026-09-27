@@ -24,13 +24,31 @@ function compactEnv(env) {
 }
 
 /**
+ * Default Xvfb resolution, computed from the same VNC_GRID_* env vars that
+ * session-vnc-bridge.js uses to tile concurrently-attached sessions' windows
+ * (see the comment there). Deriving both from one set of knobs means
+ * resizing the grid (e.g. VNC_GRID_COLS=6) never requires also hand-editing
+ * a separate, easy-to-forget "resolution" value in camofox.config.json.
+ */
+function computeGridResolution(env) {
+  const cols = Number(env.VNC_GRID_COLS || 4);
+  const rows = Number(env.VNC_GRID_ROWS || 4);
+  const cellWidth = Number(env.VNC_GRID_CELL_WIDTH || 1920);
+  const cellHeight = Number(env.VNC_GRID_CELL_HEIGHT || 1080);
+  return `${cols * cellWidth}x${rows * cellHeight}`;
+}
+
+/**
  * Resolve VNC configuration from pluginConfig + env var fallbacks.
  * All process.env reads live here -- callers get a plain config object.
  */
 export function resolveVncConfig(pluginConfig = {}, env = process.env) {
   const enabled = envFlagEnabled(env.ENABLE_VNC) || pluginConfig.enabled === true;
 
-  const rawResolution = env.VNC_RESOLUTION || pluginConfig.resolution || '1920x1080';
+  // Explicit VNC_RESOLUTION or camofox.config.json's `resolution` always
+  // wins (e.g. to pin a specific size regardless of grid settings); only
+  // fall back to the grid-derived size when neither is set.
+  const rawResolution = env.VNC_RESOLUTION || pluginConfig.resolution || computeGridResolution(env);
   const resolution = rawResolution.includes('x', rawResolution.indexOf('x') + 1)
     ? rawResolution
     : `${rawResolution}x24`;

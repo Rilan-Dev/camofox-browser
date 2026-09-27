@@ -7,6 +7,6 @@
   "plugins": {
     "youtube": { "enabled": true },
     "persistence": { "enabled": true },
-    "vnc": { "enabled": false, "resolution": "1920x1080" }
+    "vnc": { "enabled": true }
   }
 }

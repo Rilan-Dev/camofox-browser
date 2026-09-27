@@ -37,16 +37,90 @@
  * Registers:
  *   GET /vnc/status -- report watcher state and configured ports
  *   GET /sessions/:userId/storage_state -- export Playwright storageState as JSON
+ *   POST /sessions/:userId/vnc/attach -- start this session's own independent VNC bridge
+ *   POST /sessions/:userId/vnc/detach -- tear it down (the browser/session itself keeps running)
+ *   GET /sessions/:userId/vnc/status  -- whether this session's bridge is currently live
+ *   Upgrades ws://…/vnc-ws/:userId    -- proxies straight through to that session's bridge
+ *
+ * Every session gets its OWN x11vnc + websockify pair, clipped to that
+ * session's specific browser window (see session-vnc-bridge.js) -- there is
+ * no shared/global "current" VNC connection. Attaching, detaching, or
+ * closing one session's view never affects another session's view.
  *
  * Events emitted:
- *   vnc:watcher:started    { pid }
- *   vnc:watcher:stopped    { code, signal }
- *   vnc:storage:exported   { userId, cookies, origins }
+ *   vnc:watcher:started      { pid }
+ *   vnc:watcher:stopped      { code, signal }
+ *   vnc:storage:exported     { userId, cookies, origins }
+ *   vnc:session:attached     { userId, windowId }
+ *   vnc:session:detached     { userId, reason }
  */
 
 import { resolveVncConfig, startWatcher } from './vnc-launcher.js';
-import { requireAuth } from '../../lib/auth.js';
+import { createSessionVncBridge } from './session-vnc-bridge.js';
+import { requireAuth, timingSafeCompare } from '../../lib/auth.js';
 import { removeXvfbDisplayFiles } from '../../lib/tmp-cleanup.js';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+
+const WS_TICKET_TTL_MS = 30_000;
+
+/**
+ * Short-lived WebSocket tickets for /vnc-ws/:userId.
+ *
+ * A native browser WebSocket can't send an Authorization header, so the
+ * upgrade handshake can't reuse requireAuth() directly. Rather than accept
+ * the long-lived master apiKey/accessKey as a URL query param (it would sit
+ * in server access logs, browser history, and Referer headers for as long
+ * as that key is valid), POST /sessions/:userId/vnc/attach -- itself gated
+ * by the normal Authorization-header auth -- mints a ticket bound to that
+ * one userId, good for WS_TICKET_TTL_MS. The secret lives only in this
+ * process's memory: a restart invalidates every outstanding ticket, which
+ * is fine given how short their TTL is.
+ *
+ * Deliberately NOT single-use: the noVNC client in /api/vnc/[id]'s page
+ * reconnects with the SAME ticket (up to twice, within ~2-4s of the first
+ * attempt -- see connectVNC()'s retry logic) if the RFB handshake drops
+ * before fully connecting. Consuming the ticket on first use would turn
+ * every one of those into a hard 403 instead of a transparent retry. The
+ * TTL alone still bounds exposure to WS_TICKET_TTL_MS, which is the
+ * property that actually matters here.
+ */
+function createWsTicketIssuer() {
+  const secret = crypto.randomBytes(32);
+
+  function sign(payloadB64) {
+    return crypto.createHmac('sha256', secret).update(payloadB64).digest('hex');
+  }
+
+  function mint(userId) {
+    const payload = { userId, exp: Date.now() + WS_TICKET_TTL_MS };
+    const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    return `${payloadB64}.${sign(payloadB64)}`;
+  }
+
+  /** Verifies the ticket is well-formed, unexpired, and bound to `userId`. */
+  function verify(ticket, userId) {
+    if (!ticket || typeof ticket !== 'string') return false;
+    const dot = ticket.lastIndexOf('.');
+    if (dot < 0) return false;
+    const payloadB64 = ticket.slice(0, dot);
+    const sig = ticket.slice(dot + 1);
+    if (!timingSafeCompare(sig, sign(payloadB64))) return false;
+
+    let payload;
+    try {
+      payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    } catch {
+      return false;
+    }
+    if (payload.userId !== userId) return false;
+    if (typeof payload.exp !== 'number' || Date.now() > payload.exp) return false;
+
+    return true;
+  }
+
+  return { mint, verify };
+}
 
 export async function register(app, ctx, pluginConfig = {}) {
   const { events, config, log, sessions, VirtualDisplay, safeError } = ctx;
@@ -115,6 +189,100 @@ export async function register(app, ctx, pluginConfig = {}) {
       log('info', 'killing vnc watcher on shutdown');
       watcher.kill('SIGTERM');
     }
+  });
+
+  // --- Per-session VNC bridges ---
+  // Share one password across the global watcher and every per-session
+  // bridge, matching the vnc-watcher.sh convention (/tmp/.vnc/passwd), so
+  // ops only ever configures one VNC_PASSWORD.
+  let sessionPassFile = null;
+  if (vncConfig.vncPassword) {
+    try {
+      fs.mkdirSync('/tmp/.vnc', { recursive: true });
+      const { spawnSync } = await import('node:child_process');
+      const result = spawnSync('x11vnc', ['-storepasswd', vncConfig.vncPassword, '/tmp/.vnc/passwd'], { stdio: 'ignore' });
+      if (result.error || result.status !== 0) {
+        throw result.error || new Error(`x11vnc -storepasswd exited with status ${result.status}`);
+      }
+      sessionPassFile = '/tmp/.vnc/passwd';
+    } catch (err) {
+      log('warn', 'could not prepare shared x11vnc password file; per-session bridges will run unauthenticated at the RFB layer', { error: err.message });
+    }
+  }
+
+  const sessionVnc = createSessionVncBridge({
+    log,
+    events,
+    getDisplay: () => watcher.getVncStatus().display ?? null,
+    viewOnly: vncConfig.viewOnly,
+    passFile: sessionPassFile,
+  });
+
+  const wsTickets = createWsTicketIssuer();
+
+  // Splice into the raw HTTP server as soon as it exists (plugins register
+  // before app.listen() runs, so `server` is handed over via this event --
+  // see server.js's 'server:started' emit).
+  events.on('server:started', ({ server }) => {
+    if (!server) return;
+    server.on('upgrade', (req, socket, head) => {
+      if (!req.url || !req.url.startsWith('/vnc-ws/')) return;
+
+      let userId = null;
+      let ticket = null;
+      try {
+        const url = new URL(req.url, 'http://internal');
+        const match = url.pathname.match(/^\/vnc-ws\/([^/]+)\/?$/);
+        userId = match ? decodeURIComponent(match[1]) : null;
+        ticket = url.searchParams.get('ticket');
+      } catch {
+        // malformed URL -- fall through to the reject below
+      }
+
+      // Browsers can't set custom headers on a native WebSocket handshake, so
+      // this leg is authenticated with a short-lived ticket bound to this
+      // exact userId -- minted only by the Authorization-header-gated POST
+      // /sessions/:userId/vnc/attach -- rather than the long-lived master
+      // apiKey/accessKey (which would otherwise sit in this URL's query
+      // string, and therefore in access logs and browser history, for as
+      // long as that key stays valid).
+      if (!userId || !wsTickets.verify(ticket, userId)) {
+        socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      sessionVnc.handleUpgrade(req, socket, head);
+    });
+    log('info', 'vnc plugin: per-session VNC upgrade proxy attached at /vnc-ws/:userId');
+  });
+
+  const sessionVncAuth = requireAuth(config);
+
+  // --- HTTP endpoint: POST /sessions/:userId/vnc/attach ---
+  app.post('/sessions/:userId/vnc/attach', sessionVncAuth, async (req, res) => {
+    const userId = String(req.params.userId);
+    const session = sessions.get(userId);
+    if (!session) return res.status(404).json({ error: `No active session for userId="${userId}"` });
+    try {
+      await sessionVnc.attach(userId, session);
+      res.json({ ok: true, attached: true, wsTicket: wsTickets.mint(userId) });
+    } catch (err) {
+      log('warn', 'session vnc attach failed', { reqId: req.reqId, userId, error: err.message });
+      res.status(err.statusCode || 500).json({ ok: false, attached: false, error: safeError(err) });
+    }
+  });
+
+  // --- HTTP endpoint: POST /sessions/:userId/vnc/detach ---
+  app.post('/sessions/:userId/vnc/detach', sessionVncAuth, async (req, res) => {
+    const userId = String(req.params.userId);
+    await sessionVnc.detach(userId);
+    res.json({ ok: true, attached: false });
+  });
+
+  // --- HTTP endpoint: GET /sessions/:userId/vnc/status ---
+  app.get('/sessions/:userId/vnc/status', sessionVncAuth, (req, res) => {
+    res.json(sessionVnc.status(String(req.params.userId)));
   });
 
   // --- HTTP endpoint: GET /vnc/status ---

@@ -48,7 +48,7 @@ describe('vnc watcher helpers', () => {
       '100 7 /usr/bin/Xorg --wrapper',
       '101 100 /usr/bin/Xvfb -displayfd 3 -screen 0 1920x1080x24',
       '200 8 /usr/bin/Xvfb -displayfd 3 -screen 0 1920x1080x24',
-    ].join('\\n');
+    ].join('\n');
 
     expect(shell('find_owned_xvfb_pid 7 1920x1080x24', [], processes)).toBe('101');
   });

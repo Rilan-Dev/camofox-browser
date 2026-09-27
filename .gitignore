@@ -42,3 +42,7 @@ fly.toml
 # Test artifacts
 test-results/
 playwright-report/
+
+.omo
+graphify-out
+gmail-session.json

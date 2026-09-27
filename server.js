@@ -2744,6 +2744,277 @@ app.get('/metrics', async (_req, res) => {
 
 /**
  * @openapi
+ * /sessions:
+ *   get:
+ *     tags: [System]
+ *     summary: List all active sessions with userIds and sessionKeys
+ *     description: Returns all active runtime sessions with their userIds, sessionKeys, tab counts, and last access times.
+ *     responses:
+ *       200:
+ *         description: List of active sessions
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 users:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       userId:
+ *                         type: string
+ *                       sessionKeys:
+ *                         type: array
+ *                         items:
+ *                           type: string
+ *                       tabCount:
+ *                         type: integer
+ *                       lastAccess:
+ *                         type: number
+ *                 activeSessions:
+ *                   type: integer
+ *                 activeTabs:
+ *                   type: integer
+ *       503:
+ *         description: Service unavailable
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.get('/sessions', (_req, res) => {
+  const users = Array.from(sessions.entries()).map(([userId, session]) => ({
+    userId,
+    sessionKeys: Array.from(session.tabGroups.keys()),
+    tabCount: Array.from(session.tabGroups.values()).reduce((sum, tabs) => sum + tabs.size, 0),
+    lastAccess: session.lastAccess
+  }));
+  res.json({
+    users,
+    activeSessions: sessions.size,
+    activeTabs: getTotalTabCount()
+  });
+});
+
+/**
+ * @openapi
+ * /sessions/{userId}/tabs:
+ *   get:
+ *     tags: [System]
+ *     summary: List all tabs for a specific userId
+ *     description: Returns all tabs for the given userId with their sessionKeys, URLs, and states.
+ *     parameters:
+ *       - name: userId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of tabs for the user
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 userId:
+ *                   type: string
+ *                 tabs:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       tabId:
+ *                         type: string
+ *                       sessionKey:
+ *                         type: string
+ *                       url:
+ *                         type: string
+ *                       title:
+ *                         type: string
+ *                       refsAvailable:
+ *                         type: boolean
+ *                 totalTabs:
+ *                   type: integer
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.get('/sessions/:userId/tabs', (req, res) => {
+  const session = sessions.get(normalizeUserId(req.params.userId));
+  if (!session) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  const tabs = Array.from(session.tabGroups.entries()).flatMap(([sessionKey, tabMap]) =>
+    Array.from(tabMap.entries()).map(([tabId, tab]) => ({
+      tabId,
+      sessionKey,
+      url: tab.page?.url() || '',
+      title: tab.title || '',
+      refsAvailable: !!tab.refs?.size
+    }))
+  );
+  res.json({ userId: req.params.userId, tabs, totalTabs: tabs.length });
+});
+
+/**
+ * @openapi
+ * /sessions/all:
+ *   get:
+ *     tags: [System]
+ *     summary: Get complete snapshot of all users, sessions, and tabs
+ *     description: Returns a complete snapshot of all active sessions, their tabs, and metadata.
+ *     responses:
+ *       200:
+ *         description: Complete system snapshot
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 users:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       userId:
+ *                         type: string
+ *                       sessionKeys:
+ *                         type: array
+ *                         items:
+ *                           type: string
+ *                       tabs:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             tabId:
+ *                               type: string
+ *                             sessionKey:
+ *                               type: string
+ *                             url:
+ *                               type: string
+ *                             title:
+ *                               type: string
+ *                             refsAvailable:
+ *                               type: boolean
+ *                       tabCount:
+ *                         type: integer
+ *                       lastAccess:
+ *                         type: number
+ *                 activeSessions:
+ *                   type: integer
+ *                 activeTabs:
+ *                   type: integer
+ *                 totalUsers:
+ *                   type: integer
+ */
+app.get('/sessions/all', (_req, res) => {
+  const users = Array.from(sessions.entries()).map(([userId, session]) => {
+    const tabs = Array.from(session.tabGroups.entries()).flatMap(([sessionKey, tabMap]) =>
+      Array.from(tabMap.entries()).map(([tabId, tab]) => ({
+        tabId,
+        sessionKey,
+        url: tab.page?.url() || '',
+        title: tab.title || '',
+        refsAvailable: !!tab.refs?.size
+      }))
+    );
+    return {
+      userId,
+      sessionKeys: Array.from(session.tabGroups.keys()),
+      tabs,
+      tabCount: tabs.length,
+      lastAccess: session.lastAccess
+    };
+  });
+  res.json({
+    users,
+    activeSessions: sessions.size,
+    activeTabs: getTotalTabCount(),
+    totalUsers: sessions.size
+  });
+});
+
+/**
+ * @openapi
+ * /sessions/persisted:
+ *   get:
+ *     tags: [System]
+ *     summary: List all persisted user profiles (from disk)
+ *     description: Returns all user profiles that have persisted storage state on disk (cookies + localStorage).
+ *     responses:
+ *       200:
+ *         description: List of persisted user profiles
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 profiles:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       userId:
+ *                         type: string
+ *                       cookieCount:
+ *                         type: integer
+ *                       originCount:
+ *                         type: integer
+ *                       lastModified:
+ *                         type: number
+ *                 totalProfiles:
+ *                   type: integer
+ *       503:
+ *         description: Persistence not configured
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.get('/sessions/persisted', async (_req, res) => {
+  try {
+    const { readdir, stat, readFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const profileDir = '/home/node/.camofox/profiles';
+    let entries;
+    try {
+      entries = await readdir(profileDir);
+    } catch {
+      return res.json({ profiles: [], totalProfiles: 0 });
+    }
+    const profiles = [];
+    for (const entry of entries) {
+      const entryPath = join(profileDir, entry);
+      const s = await stat(entryPath);
+      if (s.isDirectory()) {
+        const statePath = join(entryPath, 'storage_state.json');
+        try {
+          const state = JSON.parse(await readFile(statePath, 'utf8'));
+          profiles.push({
+            userId: entry,
+            cookieCount: state.cookies?.length || 0,
+            originCount: state.origins?.length || 0,
+            lastModified: s.mtimeMs
+          });
+        } catch {
+          profiles.push({ userId: entry, cookieCount: 0, originCount: 0, lastModified: s.mtimeMs });
+        }
+      }
+    }
+    res.json({ profiles, totalProfiles: profiles.length });
+  } catch (e) {
+    res.status(503).json({ error: 'Persistence not configured or error reading profiles', details: e.message });
+  }
+});
+
+/**
+ * @openapi
  * /pressure/cleanup:
  *   post:
  *     tags: [System]
@@ -7184,7 +7455,7 @@ const server = app.listen(PORT, CONFIG.bindHost || undefined, async () => {
   refreshTabLockQueueDepth();
   const address = server.address();
   const bindHost = typeof address === 'object' && address ? address.address : CONFIG.bindHost;
-  pluginEvents.emit('server:started', { port: PORT, host: bindHost, pid: process.pid, plugins: loadedPlugins });
+  pluginEvents.emit('server:started', { port: PORT, host: bindHost, pid: process.pid, plugins: loadedPlugins, server });
   if (FLY_MACHINE_ID) {
     log('info', 'server started (fly)', { port: PORT, host: bindHost, pid: process.pid, machineId: FLY_MACHINE_ID, nodeVersion: process.version });
   } else {

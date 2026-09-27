@@ -117,9 +117,9 @@
     ]
   },
   "scripts": {
-    "build": "tsc -p . || true; mkdir -p dist && cp plugin.js dist/plugin.js",
+    "build": "node api.js && tsc -p . || true; mkdir -p dist && cp plugin.js dist/plugin.js",
     "prepublishOnly": "npm run build",
-    "start": "node server.js",
+    "start": "node api.js && node server.js",
     "mcp": "node mcp/server.mjs",
     "test:mcp": "npm ci --prefix mcp && node scripts/test-mcp.mjs && node scripts/test-mcp-package.mjs",
     "test:unit": "NODE_OPTIONS='--experimental-vm-modules' jest --runInBand --forceExit tests/unit",

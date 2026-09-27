@@ -16,7 +16,7 @@ noVNC / websockify (port 6080)
 Your browser → http://localhost:6080/vnc.html
 ```
 
-The plugin overrides Camoufox's default 1x1 virtual display with a human-usable resolution, then runs a watcher process that detects the Xvfb display and attaches x11vnc + noVNC. The watcher handles browser restarts automatically — when Camoufox relaunches on a new display, x11vnc reattaches.
+The plugin registers the `virtualDisplay` capability for its own `plugins.vnc` settings, selecting a human-usable resolution instead of the default 1x1 display. A second enabled display plugin cannot silently replace that provider. The watcher handles browser restarts automatically — when Camoufox relaunches on a new display, x11vnc reattaches.
 
 ## Quick start
 

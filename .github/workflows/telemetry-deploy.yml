@@ -27,3 +27,12 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: workers/crash-reporter
+
+  notify-agenthook:
+    needs: [deploy]
+    if: always()
+    uses: ./.github/workflows/agenthook-notify.yml
+    with:
+      kind: deploy
+      results: ${{ toJson(needs) }}
+    secrets: inherit

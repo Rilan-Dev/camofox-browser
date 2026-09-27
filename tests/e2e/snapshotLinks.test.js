@@ -31,6 +31,44 @@ describe('Snapshot and Links', () => {
     }
   });
   
+  test('snapshot includes bounded, redacted page structure without changing the AX snapshot field', async () => {
+    const client = createClient(serverUrl);
+
+    try {
+      const { tabId } = await client.createTab(`${testSiteUrl}/structure`);
+      const snapshot = await client.getSnapshot(tabId);
+
+      expect(snapshot.snapshot).toContain('Yoga ball');
+      expect(snapshot.snapshot).not.toContain('"forms"');
+      expect(snapshot.structure).toMatchObject({
+        forms: [expect.objectContaining({
+          id: 'report-filters',
+          method: 'get',
+          fields: expect.arrayContaining([
+            expect.objectContaining({ id: 'period', name: 'period', value: 'year', role: 'combobox', ref: expect.any(String) }),
+            expect.objectContaining({ id: 'from', name: 'from', value: '2022-01-01', role: 'textbox', ref: expect.any(String) }),
+          ]),
+        })],
+        tables: [expect.objectContaining({
+          id: 'sales',
+          headers: ['Product', 'Quantity'],
+          columns: ['Product', 'Quantity'],
+          rows: [['Yoga ball', '7']],
+        })],
+        evidenceLimits: [expect.objectContaining({
+          source: 'table',
+          tableId: 'sales',
+          availableDimensions: ['Product', 'Quantity'],
+        })],
+      });
+      const token = snapshot.structure.forms[0].fields.find((field) => field.id === 'api_token');
+      expect(token).toBeDefined();
+      expect(token.value).toBeUndefined();
+    } finally {
+      await client.cleanup();
+    }
+  });
+
   test('snapshot contains element refs', async () => {
     const client = createClient(serverUrl);
     

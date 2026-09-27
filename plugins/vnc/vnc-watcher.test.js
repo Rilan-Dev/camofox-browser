@@ -43,6 +43,16 @@ describe('vnc watcher helpers', () => {
     expect(shell('find_owned_xvfb_pid 7 1920x1080x24', [], processes)).toBe('100');
   });
 
+  test('finds an owned Xvfb descendant, not only a direct child', () => {
+    const processes = [
+      '100 7 /usr/bin/Xorg --wrapper',
+      '101 100 /usr/bin/Xvfb -displayfd 3 -screen 0 1920x1080x24',
+      '200 8 /usr/bin/Xvfb -displayfd 3 -screen 0 1920x1080x24',
+    ].join('\n');
+
+    expect(shell('find_owned_xvfb_pid 7 1920x1080x24', [], processes)).toBe('101');
+  });
+
   test('maps the owned Xvfb PID through its lock file and real Unix socket', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'camofox-vnc-test-'));
     tempDirs.push(root);

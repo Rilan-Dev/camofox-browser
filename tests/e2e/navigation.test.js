@@ -49,6 +49,73 @@ describe('Navigation', () => {
     }
   });
 
+  test('keeps sibling tabs alive when a no-proxy navigation times out', async () => {
+    const client = createClient(serverUrl);
+
+    try {
+      const { tabId: existingTabId } = await client.createTab(`${testSiteUrl}/pageA`);
+      const { tabId } = await client.createTab();
+
+      await expect(client.request(
+        'POST',
+        `/tabs/${tabId}/navigate`,
+        { userId: client.userId, url: `${testSiteUrl}/slow-navigation` },
+        { timeout: 45000 },
+      )).rejects.toMatchObject({ status: 500 });
+
+      const existingTabSnapshot = await client.getSnapshot(existingTabId);
+      expect(existingTabSnapshot.snapshot).toContain('Welcome to Page A');
+    } finally {
+      await client.cleanup();
+    }
+  }, 60000);
+
+  test('reports a destination 404 without discarding the rendered page', async () => {
+    const client = createClient(serverUrl);
+
+    try {
+      const { tabId } = await client.createTab();
+      const result = await client.navigate(tabId, `${testSiteUrl}/not-found`);
+
+      expect(result).toMatchObject({ ok: true, httpStatus: 404, navigationOk: false });
+      const snapshot = await client.getSnapshot(tabId);
+      expect(snapshot.snapshot).toContain('Cannot GET /not-found');
+    } finally {
+      await client.cleanup();
+    }
+  });
+
+  test('reports a destination 404 from an initial URL without discarding the rendered page', async () => {
+    const client = createClient(serverUrl);
+
+    try {
+      const result = await client.createTab(`${testSiteUrl}/not-found`);
+
+      expect(result).toMatchObject({ httpStatus: 404, navigationOk: false });
+      const snapshot = await client.getSnapshot(result.tabId);
+      expect(snapshot.snapshot).toContain('Cannot GET /not-found');
+    } finally {
+      await client.cleanup();
+    }
+  });
+
+  test('does not report an upstream 503 page as a successful navigation', async () => {
+    const client = createClient(serverUrl);
+
+    try {
+      const { tabId } = await client.createTab(`${testSiteUrl}/pageA`);
+      await client.getSnapshot(tabId);
+      await expect(client.navigate(tabId, `${testSiteUrl}/unavailable`)).rejects.toMatchObject({
+        status: 502,
+        data: expect.objectContaining({ code: 'destination_unavailable' }),
+      });
+      const snapshot = await client.getSnapshot(tabId, { offset: 1 });
+      expect(snapshot.snapshot).toContain('Temporarily unavailable');
+    } finally {
+      await client.cleanup();
+    }
+  });
+
   test('navigate back', async () => {
     const client = createClient(serverUrl);
     

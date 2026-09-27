@@ -51,3 +51,12 @@ jobs:
             ghcr.io/jo-inc/camofox-browser:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  notify-agenthook:
+    needs: [docker]
+    if: always()
+    uses: ./.github/workflows/agenthook-notify.yml
+    with:
+      kind: deploy
+      results: ${{ toJson(needs) }}
+    secrets: inherit

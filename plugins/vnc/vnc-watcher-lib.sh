@@ -5,9 +5,32 @@
 find_owned_xvfb_pid() {
   parent_pid="$1"
   resolution="$2"
-  awk -v parent="$parent_pid" -v res="$resolution" '
-    $2 == parent && $3 ~ /(^|\/)Xvfb$/ && index($0, res) { found=$1 }
-    END { if (found) print found }
+  awk -v root="$parent_pid" -v res="$resolution" '
+    {
+      pid[$1] = $1
+      ppid[$1] = $2
+      cmd[$1] = $3
+      line[$1] = $0
+    }
+    function owned(candidate, p, depth) {
+      p = candidate
+      depth = 0
+      while (p != root && p != 1 && p != "" && depth++ < 64) {
+        p = ppid[p]
+      }
+      return p == root
+    }
+    END {
+      for (candidate in pid) {
+        if (cmd[candidate] ~ /(^|\/)Xvfb$/ &&
+            index(line[candidate], res) &&
+            owned(candidate)) {
+          found = candidate
+          break
+        }
+      }
+      if (found) print found
+    }
   '
 }
 

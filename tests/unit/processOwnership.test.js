@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { snapshotOwnedBrowserProcesses, survivingOwnedBrowserProcesses } from '../../lib/process-ownership.js';
+import { snapshotOwnedBrowserProcesses, survivingOwnedBrowserProcesses, profilePathsFromProcessSnapshot } from '../../lib/process-ownership.js';
 
 function proc(root, pid, ppid, cmdline, startTime = '10', comm = 'test') {
   const dir = path.join(root, String(pid));
@@ -10,6 +10,20 @@ function proc(root, pid, ppid, cmdline, startTime = '10', comm = 'test') {
   fs.writeFileSync(path.join(dir, 'stat'), `${pid} (${comm}) S ${ppid} 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 ${startTime}`);
   fs.writeFileSync(path.join(dir, 'cmdline'), cmdline);
 }
+
+test('profile path extraction accepts separate and equals-form profile arguments', () => {
+  const profiles = profilePathsFromProcessSnapshot([
+    { cmdline: '/cache/camoufox-bin\0-profile\0/tmp/playwright_firefoxdev_profile-live\0-foreground' },
+    { cmdline: '/cache/camoufox-bin\0--profile=/tmp/camoufox-live' },
+    { cmdline: '/cache/camoufox-bin\0-foreground' },
+  ]);
+
+  expect([...profiles]).toEqual([
+    path.resolve('/tmp/playwright_firefoxdev_profile-live'),
+    path.resolve('/tmp/camoufox-live'),
+  ]);
+});
+
 
 test('cleanup snapshot never adopts another scoped server browser', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'camofox-proc-'));

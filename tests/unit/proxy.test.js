@@ -149,6 +149,15 @@ describe('createProxyPool', () => {
     expect(pool.getLaunchProxy()).toEqual({ server: 'http://proxy.example.com:7000', username: 'u', password: 'p' });
   });
 
+  test('uses SOCKS protocol for both Playwright and CLI proxy URLs', () => {
+    const config = {
+      strategy: 'round_robin', protocol: 'socks5', host: 'proxy.example.com', ports: [1080], username: 'user', password: 'pass',
+    };
+    const pool = createProxyPool(config);
+    expect(pool.getLaunchProxy().server).toBe('socks5://proxy.example.com:1080');
+    expect(buildProxyUrl(pool, config)).toBe('socks5://user:pass@proxy.example.com:1080');
+  });
+
   test('multi-port round-robin', () => {
     const pool = createProxyPool({ strategy: 'round_robin', host: 'proxy.example.com', ports: [10001, 10002, 10003], username: 'u', password: 'p' });
     expect(pool.size).toBe(3);
@@ -204,6 +213,15 @@ describe('createProxyPool', () => {
     const launch = pool.getLaunchProxy('browser-1');
     expect(launch.server).toBe('http://proxy.brightdata.com:22225');
     expect(launch.username).toBe('brd-customer-123-browser-1');
+  });
+
+  test('uses SOCKS protocol for backconnect providers', () => {
+    const config = {
+      strategy: 'backconnect', protocol: 'socks5', providerName: 'generic', backconnectHost: 'proxy.example.com', backconnectPort: 1080, username: 'user', password: 'pass',
+    };
+    const pool = createProxyPool(config);
+    expect(pool.getLaunchProxy('browser-1').server).toBe('socks5://proxy.example.com:1080');
+    expect(buildProxyUrl(pool, config)).toMatch(/^socks5:\/\/user-ytdlp-[a-f0-9]+:pass@proxy\.example\.com:1080$/);
   });
 
   test('round_robin pool has null provider and no session rotation', () => {

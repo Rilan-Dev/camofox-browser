@@ -133,6 +133,20 @@ describe('cleanupStaleFirefoxProfiles', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('does not remove protected active profiles even after the age threshold', () => {
+    const dir = makeTmpDir();
+    const profileDir = path.join(dir, 'playwright_firefoxdev_profile-live');
+    fs.mkdirSync(profileDir);
+    fs.writeFileSync(path.join(profileDir, 'storage.sqlite'), 'data');
+    const oldTime = new Date(Date.now() - 5 * 60 * 1000);
+    fs.utimesSync(profileDir, oldTime, oldTime);
+
+    const result = cleanupStaleFirefoxProfiles({ tmpDir: dir, protectedPaths: [profileDir] });
+    expect(result.removed).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(fs.existsSync(profileDir)).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
   it('skips recent profile directories', () => {
     const dir = makeTmpDir();
     const profileDir = path.join(dir, 'playwright_firefoxdev_profile-recent');

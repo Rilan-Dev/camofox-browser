@@ -81,6 +81,20 @@ describe('browser error normalization', () => {
     expect(browserErrorCode(err)).toBe('element_not_actionable');
   });
 
+  test('locator wait timeouts normalize to a fresh-snapshot recovery', () => {
+    const err = new Error('page.focus: Timeout 10000ms exceeded.\nCall log:\n  - waiting for locator(\'select[name="status"]\')');
+    expect(browserErrorStatus(err)).toBe(422);
+    expect(browserErrorCode(err)).toBe('element_not_actionable');
+    expect(browserErrorRecovery(err)).toBe('snapshot_then_retry');
+  });
+
+  test('mouse fallback actionability errors normalize to a fresh-snapshot recovery', () => {
+    const err = new Error('Element not actionable: mouse fallback did not complete within 3000ms. Call snapshot to refresh refs and retry.');
+    expect(browserErrorStatus(err)).toBe(422);
+    expect(browserErrorCode(err)).toBe('element_not_actionable');
+    expect(browserErrorRecovery(err)).toBe('snapshot_then_retry');
+  });
+
   test('non-fillable submit inputs normalize to element actionability errors', () => {
     const err = Object.assign(
       new Error('Element input[type=submit] is not fillable. Use click for buttons and other controls.'),

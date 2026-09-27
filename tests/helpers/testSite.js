@@ -36,6 +36,16 @@ function createTestApp() {
     `);
   });
   
+  // A deterministic upstream failure for navigation error handling tests.
+  app.get('/unavailable', (req, res) => {
+    res.status(503).send('Temporarily unavailable');
+  });
+
+  // A response that never completes, used to exercise navigation timeouts.
+  app.get('/slow-navigation', () => {
+    // Deliberately leave the HTTP response open until the browser aborts it.
+  });
+
   // Page that fires a client-side redirect shortly after DOMContentLoaded
   app.get('/lateRedirect', (req, res) => {
     res.send(`
@@ -152,6 +162,23 @@ function createTestApp() {
       </body></html>
     `);
   });
+
+  app.get('/structure', (req, res) => {
+    res.send(`
+      <!DOCTYPE html>
+      <html><head><title>Structure Test</title></head>
+      <body>
+        <form id="report-filters" method="get">
+          <label for="period">Period</label>
+          <select id="period" name="period"><option value="month">Month</option><option value="year" selected>Year</option></select>
+          <label for="from">From</label><input id="from" name="from" value="2022-01-01" />
+          <input id="api_token" name="api_token" value="must-not-appear" />
+          <button id="show-report" type="submit">Show Report</button>
+        </form>
+        <table id="sales"><thead><tr><th>Product</th><th>Quantity</th></tr></thead><tbody><tr><td>Yoga ball</td><td>7</td></tr></tbody></table>
+      </body></html>
+    `);
+  });
   
   // Page with refresh counter (to verify refresh actually works)
   let refreshCount = 0;
@@ -253,6 +280,12 @@ function createTestApp() {
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', 'attachment; filename="hello.txt"');
     res.send(body);
+  });
+
+  app.get('/inline-document.pdf', (req, res) => {
+    // Small valid PDF fixture. No Content-Disposition means Firefox displays it inline.
+    const pdf = '%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n';
+    res.type('application/pdf').send(pdf);
   });
 
   // Page with a direct file input for upload endpoint tests

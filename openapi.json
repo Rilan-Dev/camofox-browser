@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "camofox-browser",
-    "version": "1.14.0",
+    "version": "1.17.0",
     "description": "Anti-detection browser automation server for AI agents. Accessibility snapshots, element refs, session isolation, cookie import, proxy rotation, and structured logs.",
     "license": {
       "name": "MIT",
@@ -456,6 +456,15 @@
                     },
                     "url": {
                       "type": "string"
+                    },
+                    "httpStatus": {
+                      "type": "integer",
+                      "nullable": true,
+                      "description": "HTTP status of the optional initial document navigation."
+                    },
+                    "navigationOk": {
+                      "type": "boolean",
+                      "description": "False when the optional initial document navigation returned HTTP 400 or higher."
                     }
                   }
                 }
@@ -606,11 +615,31 @@
         },
         "responses": {
           "200": {
-            "description": "Navigation result with snapshot.",
+            "description": "Navigation result. Destination HTTP status is reported even when a rendered error page is available.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "tabId": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "httpStatus": {
+                      "type": "integer",
+                      "nullable": true,
+                      "description": "HTTP status of the final document navigation when available."
+                    },
+                    "navigationOk": {
+                      "type": "boolean",
+                      "description": "False when the final document returned an HTTP status of 400 or greater."
+                    }
+                  }
                 }
               }
             }
@@ -707,6 +736,10 @@
                     },
                     "snapshot": {
                       "type": "string"
+                    },
+                    "structure": {
+                      "type": "object",
+                      "description": "Optional bounded read-only DOM summary of forms and tables. The snapshot field remains unchanged."
                     },
                     "refsCount": {
                       "type": "integer"
@@ -1074,6 +1107,85 @@
           },
           "409": {
             "description": "Page changed or target became invalid; caller should take a fresh snapshot and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tabs/{tabId}/select": {
+      "post": {
+        "tags": [
+          "Interaction"
+        ],
+        "summary": "Select a native form option",
+        "parameters": [
+          {
+            "name": "tabId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "userId",
+                  "option"
+                ],
+                "properties": {
+                  "userId": {
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "selector": {
+                    "type": "string"
+                  },
+                  "option": {
+                    "type": "string",
+                    "description": "Visible option label or HTML value."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Option selected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Tab not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1570,6 +1682,53 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/tabs/{tabId}/fetch-current-resource": {
+      "post": {
+        "tags": [
+          "Content"
+        ],
+        "summary": "Save the current tab's PDF as a download artifact",
+        "parameters": [
+          {
+            "name": "tabId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "userId"
+                ],
+                "properties": {
+                  "userId": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved PDF download artifact."
+          },
+          "404": {
+            "description": "Tab not found."
+          },
+          "415": {
+            "description": "Current resource is not a PDF."
           }
         }
       }

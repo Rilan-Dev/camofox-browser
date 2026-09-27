@@ -3,9 +3,12 @@
 
 FROM node:22-trixie-slim
 
-ARG CAMOUFOX_VERSION=135.0.1
-ARG CAMOUFOX_RELEASE=beta.24
+ARG CAMOUFOX_VERSION=152.0.4
+ARG CAMOUFOX_RELEASE=beta.28
 ARG TARGETARCH
+ARG YT_DLP_VERSION=2026.08.19
+ARG YT_DLP_SHA256_AMD64=58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a
+ARG YT_DLP_SHA256_ARM64=b16e4dab368a816cd05d477d698a605a6ae87ccee1c8ffd38fa21d7254141fcc
 
 # Install dependencies for Camoufox (Firefox-based)
 RUN apt-get update && apt-get install -y \
@@ -47,8 +50,8 @@ RUN apt-get update && apt-get install -y \
 # Download and install Camoufox
 RUN set -eux; \
     case "${TARGETARCH}" in \
-      amd64) CAMOUFOX_ARCH="x86_64"; YTDLP_SUFFIX="" ;; \
-      arm64) CAMOUFOX_ARCH="arm64";   YTDLP_SUFFIX="_aarch64" ;; \
+      amd64) CAMOUFOX_ARCH="x86_64" ;; \
+      arm64) CAMOUFOX_ARCH="arm64" ;; \
       *) echo "Unsupported arch: ${TARGETARCH}" && exit 1 ;; \
     esac; \
     mkdir -p /root/.cache/camoufox; \
@@ -58,10 +61,7 @@ RUN set -eux; \
     chmod -R 755 /root/.cache/camoufox; \
     echo "{\"version\":\"${CAMOUFOX_VERSION}\",\"release\":\"${CAMOUFOX_RELEASE}\"}" > /root/.cache/camoufox/version.json; \
     test -f /root/.cache/camoufox/camoufox-bin && echo "Camoufox installed successfully"; \
-    rm /tmp/camoufox.zip; \
-    curl -fSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux${YTDLP_SUFFIX}" \
-      -o /usr/local/bin/yt-dlp; \
-    chmod 755 /usr/local/bin/yt-dlp
+    rm /tmp/camoufox.zip
 
 WORKDIR /app
 
@@ -81,10 +81,16 @@ COPY mcp/ ./mcp/
 COPY plugins/ ./plugins/
 COPY scripts/ ./scripts/
 
-# Install default plugin dependencies
+# Install default plugin dependencies. yt-dlp is pinned per target architecture
+# and verified by the YouTube plugin hook.
 # Note: sh is used explicitly (./scripts/) because COPY from Windows
 # does not preserve +x permission bits in Docker build contexts.
-RUN sh scripts/install-plugin-deps.sh
+RUN case "${TARGETARCH}" in \
+      amd64) export YT_DLP_ASSET=yt-dlp_linux YT_DLP_SHA256="${YT_DLP_SHA256_AMD64}" ;; \
+      arm64) export YT_DLP_ASSET=yt-dlp_linux_aarch64 YT_DLP_SHA256="${YT_DLP_SHA256_ARM64}" ;; \
+      *) echo "Unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    sh scripts/install-plugin-deps.sh
 
 ENV NODE_ENV=production
 ENV CAMOFOX_PORT=9377

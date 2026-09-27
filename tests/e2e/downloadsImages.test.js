@@ -70,4 +70,20 @@ describe('Downloads and Images', () => {
       await client.cleanup();
     }
   });
+  test('POST /tabs/:tabId/fetch-current-resource saves an inline PDF as a download', async () => {
+    const client = createClient(serverUrl);
+    try {
+      const { tabId } = await client.createTab(`${testSiteUrl}/inline-document.pdf`);
+      const result = await client.fetchCurrentResource(tabId);
+      expect(result.download.mimeType).toBe('application/pdf');
+      expect(result.download.suggestedFilename).toBe('inline-document.pdf');
+      expect(result.download.bytes).toBeGreaterThan(0);
+
+      const downloads = await client.getDownloads(tabId, { includeData: true, maxBytes: 1024 * 1024 });
+      expect(downloads.downloads).toHaveLength(1);
+      expect(Buffer.from(downloads.downloads[0].dataBase64, 'base64').subarray(0, 5).toString()).toBe('%PDF-');
+    } finally {
+      await client.cleanup();
+    }
+  });
 });

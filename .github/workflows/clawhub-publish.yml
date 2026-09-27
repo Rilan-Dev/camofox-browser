@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   id-token: write
 
@@ -25,3 +26,12 @@ jobs:
       dry_run: false
     secrets:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
+
+  notify-agenthook:
+    needs: [dry-run, publish]
+    if: always() && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
+    uses: ./.github/workflows/agenthook-notify.yml
+    with:
+      kind: release
+      results: ${{ toJson(needs) }}
+    secrets: inherit

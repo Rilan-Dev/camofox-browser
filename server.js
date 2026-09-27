@@ -2943,6 +2943,55 @@ app.post('/tabs', async (req, res) => {
   }
 });
 
+// Activate a tab in the real browser window. DOM focus alone is not
+// sufficient for VNC: the framebuffer follows the page that Playwright has
+// brought to the foreground.
+app.post('/tabs/:tabId/activate', async (req, res) => {
+  const tabId = req.params.tabId;
+
+  try {
+    const { userId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+
+    const session = sessions.get(normalizeUserId(userId));
+    const found = session && findTab(session, tabId);
+    if (!found) return tabNotFoundResponse(res, tabId);
+    session.lastAccess = Date.now();
+
+    const result = await withUserLimit(userId, () => withTimeout(
+      withTabLock(tabId, async () => {
+        await ensureBrowser();
+        const page = found.tabState.page;
+        if (!page || page.isClosed()) {
+          return { ok: false, tabId, error: 'Tab page is closed' };
+        }
+
+        await page.bringToFront();
+
+        return {
+          ok: true,
+          tabId,
+          url: safePageUrl(page),
+          title: await page.title().catch(() => ''),
+        };
+      }),
+      10000,
+      'Tab activation timed out',
+    ));
+
+    if (!result?.ok) return res.status(409).json(result);
+    return res.json(result);
+  } catch (err) {
+    log('error', 'tab activation failed', {
+      reqId: req.reqId,
+      tabId,
+      userId: req.body?.userId,
+      error: err.message,
+    });
+    return handleRouteError(err, req, res);
+  }
+});
+
 // Navigate
 /**
  * @openapi

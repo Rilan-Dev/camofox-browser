@@ -1,0 +1,18 @@
+{
+  "default_branch": "master",
+  "branches": [
+    "master",
+    "origin",
+    "unification/phase-0-1-source-freeze"
+  ],
+  "parent": {
+    "master": null,
+    "origin": "master",
+    "unification/phase-0-1-source-freeze": "master"
+  },
+  "order": [
+    "master",
+    "origin",
+    "unification/phase-0-1-source-freeze"
+  ]
+}

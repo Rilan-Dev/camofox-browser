@@ -1,6 +1,4 @@
 node_modules/
-.env
-.env.local
 .env.*.local
 
 # Logs
@@ -24,7 +22,6 @@ build/
 
 # IDE
 .idea/
-.vscode/
 *.swp
 *.swo
 *~
@@ -42,3 +39,4 @@ fly.toml
 # Test artifacts
 test-results/
 playwright-report/
+config.bat

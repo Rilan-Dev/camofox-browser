@@ -109,3 +109,12 @@ jobs:
       - name: Publish standalone MCP package with provenance
         working-directory: mcp
         run: npm publish --provenance --access public
+
+  notify-agenthook:
+    needs: [test, publish]
+    if: always()
+    uses: ./.github/workflows/agenthook-notify.yml
+    with:
+      kind: release
+      results: ${{ toJson(needs) }}
+    secrets: inherit

@@ -791,6 +791,7 @@ describe('createTabHealthTracker', () => {
   function createMockPage() {
     const listeners = {};
     return {
+      listeners,
       on: (event, handler) => {
         if (!listeners[event]) listeners[event] = [];
         listeners[event].push(handler);
@@ -820,17 +821,29 @@ describe('createTabHealthTracker', () => {
     expect(snap.pageErrors).toBe(1);
   });
 
-  test('tracks request failures', () => {
+  test('does not attach request/response listeners by default', () => {
     const page = createMockPage();
-    const tracker = createTabHealthTracker(page);
+    createTabHealthTracker(page);
+    expect(page.listeners.request).toBeUndefined();
+    expect(page.listeners.response).toBeUndefined();
+    expect(page.listeners.requestfinished).toBeUndefined();
+    expect(page.listeners.requestfailed).toBeUndefined();
+    expect(page.listeners.crash).toHaveLength(1);
+    expect(page.listeners.pageerror).toHaveLength(1);
+    expect(page.listeners.dialog).toHaveLength(1);
+  });
+
+  test('tracks request failures when enabled', () => {
+    const page = createMockPage();
+    const tracker = createTabHealthTracker(page, { trackRequests: true });
     page._emit('requestfailed', {});
     const snap = tracker.snapshot();
     expect(snap.requestFailures).toBe(1);
   });
 
-  test('tracks in-flight requests', () => {
+  test('tracks in-flight requests when enabled', () => {
     const page = createMockPage();
-    const tracker = createTabHealthTracker(page);
+    const tracker = createTabHealthTracker(page, { trackRequests: true });
     // Simulate 3 requests starting
     page._emit('request', { isNavigationRequest: () => false });
     page._emit('request', { isNavigationRequest: () => false });
@@ -845,9 +858,9 @@ describe('createTabHealthTracker', () => {
     expect(tracker.health.inflightRequests).toBe(1);
   });
 
-  test('tracks HTTP status histogram', () => {
+  test('tracks HTTP status histogram when enabled', () => {
     const page = createMockPage();
-    const tracker = createTabHealthTracker(page);
+    const tracker = createTabHealthTracker(page, { trackRequests: true });
     page._emit('response', { status: () => 403, headers: () => ({}), request: () => ({ isNavigationRequest: () => false }) });
     page._emit('response', { status: () => 403, headers: () => ({}), request: () => ({ isNavigationRequest: () => false }) });
     page._emit('response', { status: () => 429, headers: () => ({}), request: () => ({ isNavigationRequest: () => false }) });
@@ -879,9 +892,9 @@ describe('createTabHealthTracker', () => {
     expect(snap.frameCount).toBe(undefined);
   });
 
-  test('tracks redirect status codes', () => {
+  test('tracks redirect status codes when enabled', () => {
     const page = createMockPage();
-    const tracker = createTabHealthTracker(page);
+    const tracker = createTabHealthTracker(page, { trackRequests: true });
     // Simulate nav request with redirects
     page._emit('request', { isNavigationRequest: () => true, redirectedFrom: () => null });
     page._emit('response', { status: () => 301, headers: () => ({}), request: () => ({ isNavigationRequest: () => true }) });
@@ -895,9 +908,9 @@ describe('createTabHealthTracker', () => {
     expect(snap.maxRedirectDepth).toBe(2);
   });
 
-  test('detects bot protection on navigation response', () => {
+  test('detects bot protection on navigation response when enabled', () => {
     const page = createMockPage();
-    const tracker = createTabHealthTracker(page);
+    const tracker = createTabHealthTracker(page, { trackRequests: true });
     page._emit('request', { isNavigationRequest: () => true, redirectedFrom: () => null });
     page._emit('response', {
       status: () => 403,

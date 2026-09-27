@@ -1,0 +1,50 @@
+name: Notify agenthook
+
+on:
+  workflow_call:
+    inputs:
+      kind:
+        description: Event category for the receiving agent.
+        required: true
+        type: string
+      results:
+        description: JSON object containing prerequisite job results.
+        required: true
+        type: string
+    secrets:
+      AGENTHOOK_URL:
+        required: true
+      AGENTHOOK_TOKEN:
+        required: true
+      AGENTHOOK_TOPIC:
+        required: true
+
+permissions: {}
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify agenthook
+        env:
+          AGENTHOOK_URL: ${{ secrets.AGENTHOOK_URL }}
+          AGENTHOOK_TOKEN: ${{ secrets.AGENTHOOK_TOKEN }}
+          AGENTHOOK_TOPIC: ${{ secrets.AGENTHOOK_TOPIC }}
+          EVENT_KIND: ${{ inputs.kind }}
+          RESULTS: ${{ inputs.results }}
+        run: |
+          status=$(jq -r '[.[] | .result] | if index("failure") then "failure" elif index("cancelled") then "cancelled" else "success" end' <<< "$RESULTS")
+          curl --fail --silent --show-error --retry 3 \
+            --request POST \
+            --header "Authorization: Bearer ${AGENTHOOK_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data "$(jq -nc \
+              --arg kind "$EVENT_KIND" \
+              --arg status "$status" \
+              --arg repo "$GITHUB_REPOSITORY" \
+              --arg branch "$GITHUB_REF_NAME" \
+              --arg sha "$GITHUB_SHA" \
+              --arg run_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              --argjson results "$RESULTS" \
+              '{kind:$kind,status:$status,repository:$repo,branch:$branch,sha:$sha,run_url:$run_url,results:$results}')" \
+            "${AGENTHOOK_URL}/v1/webhooks/${AGENTHOOK_TOPIC}"

@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [master]
 
+permissions:
+  contents: read
+
 jobs:
   unit:
     runs-on: ubuntu-latest
@@ -40,8 +43,39 @@ jobs:
           npm install --no-save jest-junit
           node --experimental-vm-modules node_modules/.bin/jest \
             --testPathPatterns='tests/unit|plugins' \
-            --testPathIgnorePatterns='security\.test|tabRecycling\.test|cookies\.test' \
+            --testPathIgnorePatterns='security\.test|tabRecycling\.test|cookies\.test|timeoutContinuation\.test|operationalFailures\.test|tabLifecycleContract\.test' \
             --forceExit
+        env:
+          CI: true
+
+
+  windows-process-cleanup:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install --no-save jest-junit
+
+      - name: Install Camoufox
+        run: npm run fetch-bin
+        env:
+          # camoufox-js uses this for authenticated GitHub release lookups.
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Verify Windows process cleanup
+        shell: pwsh
+        run: |
+          $env:NODE_OPTIONS = '--experimental-vm-modules'
+          npx jest --runInBand --forceExit tests/unit/windowsProcesses.test.js
         env:
           CI: true
 
@@ -92,7 +126,46 @@ jobs:
         run: |
           xvfb-run --auto-servernum \
             node --experimental-vm-modules node_modules/.bin/jest \
-              --testPathPatterns='tests/unit/(security|tabRecycling|cookies)\.test' \
+              --testPathPatterns='tests/unit/(security|tabRecycling|cookies|timeoutContinuation|operationalFailures|tabLifecycleContract)\.test' \
               --runInBand --forceExit
         env:
           CI: true
+
+  windows-e2e:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install --no-save jest-junit
+
+      - name: Install Camoufox
+        run: npm run fetch-bin
+        env:
+          # camoufox-js uses this for authenticated GitHub release lookups.
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Run browser E2E tests
+        shell: pwsh
+        run: |
+          $env:NODE_OPTIONS = '--experimental-vm-modules'
+          npx jest --config jest.config.e2e.cjs --runInBand --forceExit
+        env:
+          CI: true
+
+  notify-agenthook:
+    needs: [unit, windows-process-cleanup, e2e, windows-e2e]
+    if: always()
+    uses: ./.github/workflows/agenthook-notify.yml
+    with:
+      kind: ci
+      results: ${{ toJson(needs) }}
+    secrets: inherit

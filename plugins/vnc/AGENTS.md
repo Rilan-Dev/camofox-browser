@@ -32,7 +32,7 @@ Disabled by default. Enable with `ENABLE_VNC=1` env var or `"vnc": { "enabled": 
 
 ## Architecture
 
-The plugin overrides `ctx.createVirtualDisplay` to use a higher-resolution display (default 1920x1080 instead of 1x1). `vnc-watcher.sh` polls for the Xvfb process, then attaches x11vnc + noVNC on top.
+The plugin registers the `virtualDisplay` capability for its own `plugins.vnc` settings, selecting a higher-resolution display (default 1920x1080 instead of 1x1). A second plugin cannot silently replace that provider. `vnc-watcher.sh` polls for the Xvfb process, then attaches x11vnc + noVNC on top.
 
 ## Original Contributors
 

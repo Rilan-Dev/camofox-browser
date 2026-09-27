@@ -173,5 +173,28 @@ describe('Tab Lifecycle Contract', () => {
         await client.cleanup();
       }
     }, 60000);
+
+    test('navigating a closed popup replaces its page without changing tab ID', async () => {
+      const client = createClient(serverUrl);
+      try {
+        const { tabId } = await client.createTab(`${testSiteUrl}/popup-source`);
+        await client.request('POST', `/tabs/${tabId}/evaluate`, {
+          userId: client.userId,
+          expression: "Boolean(window.open('/popup-target?close=1', '_blank'))",
+        });
+        await new Promise(r => setTimeout(r, 1500));
+
+        const tabs = await client.request('GET', `/tabs?userId=${client.userId}`);
+        const popupTab = tabs.tabs.find(t => t.url.includes('/popup-target'));
+        expect(popupTab).toBeDefined();
+
+        const result = await client.navigate(popupTab.tabId, `${testSiteUrl}/pageA`);
+        expect(result).toMatchObject({ ok: true, tabId: popupTab.tabId });
+        const snapshot = await client.getSnapshot(popupTab.tabId);
+        expect(snapshot.snapshot).toContain('Welcome to Page A');
+      } finally {
+        await client.cleanup();
+      }
+    }, 60000);
   });
 });

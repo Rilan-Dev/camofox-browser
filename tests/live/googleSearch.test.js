@@ -36,6 +36,7 @@ describe('Live Google Search', () => {
       
       expect(snapshot.snapshot).toBeDefined();
       expect(snapshot.snapshot.length).toBeGreaterThan(100);
+      expect(snapshot.snapshot).toMatch(/- link ".+" \[e\d+\]:\n\s+- \/url: https?:\/\//);
       
       // Should contain at least one of the search terms
       const containsSearchTerm = 

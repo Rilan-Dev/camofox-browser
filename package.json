@@ -1,6 +1,6 @@
 {
   "name": "@askjo/camofox-browser",
-  "version": "1.17.0",
+  "version": "1.18.0",
   "description": "Headless browser automation server and OpenClaw plugin for AI agents - anti-detection, element refs, and session isolation",
   "type": "module",
   "main": "server.js",
@@ -117,9 +117,9 @@
     ]
   },
   "scripts": {
-    "build": "tsc -p . || true; mkdir -p dist && cp plugin.js dist/plugin.js",
+    "build": "node api.js && tsc -p . || true; mkdir -p dist && cp plugin.js dist/plugin.js",
     "prepublishOnly": "npm run build",
-    "start": "node server.js",
+    "start": "node api.js && node server.js",
     "mcp": "node mcp/server.mjs",
     "test:mcp": "npm ci --prefix mcp && node scripts/test-mcp.mjs && node scripts/test-mcp-package.mjs",
     "test:unit": "NODE_OPTIONS='--experimental-vm-modules' jest --runInBand --forceExit tests/unit",
@@ -169,7 +169,7 @@
       "glob": "13.0.6"
     },
     "qs": "6.16.0",
-    "fast-uri": "3.1.7",
+    "fast-uri": "3.1.8",
     "hono": "4.13.5"
   },
   "bin": {
